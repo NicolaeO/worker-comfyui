@@ -424,5 +424,50 @@ class TestHandlerPreflightOrdering(unittest.TestCase):
         self.assertEqual(mock_queue.call_args[0][0], workflow)
 
 
+class TestHandlerAudioOutputs(unittest.TestCase):
+    """SaveAudio* nodes report files under "audio"; they must be returned too."""
+
+    @patch("handler.get_image_data", return_value=b"ID3fake-mp3")
+    @patch("handler.get_history")
+    @patch("handler.queue_workflow")
+    @patch("handler.websocket.WebSocket")
+    @patch("handler.check_server", return_value=True)
+    @patch("handler.requests.get")
+    def test_audio_output_returned_as_base64(
+        self, mock_get, mock_check_server, mock_ws_cls, mock_queue, mock_history, mock_data
+    ):
+        mock_get.return_value = _mock_object_info_response(_make_object_info())
+        mock_queue.return_value = {"prompt_id": "abc"}
+        mock_history.return_value = {
+            "abc": {
+                "outputs": {
+                    "107": {
+                        "audio": [
+                            {"filename": "song_00001_.mp3", "subfolder": "audio", "type": "output"}
+                        ]
+                    }
+                }
+            }
+        }
+        mock_ws = MagicMock()
+        mock_ws.recv.return_value = json.dumps(
+            {"type": "executing", "data": {"node": None, "prompt_id": "abc"}}
+        )
+        mock_ws_cls.return_value = mock_ws
+
+        job = {"id": "job-3", "input": {"workflow": {"1": {"class_type": "Note", "inputs": {}}}}}
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("BUCKET_ENDPOINT_URL", None)
+            result = handler.handler(job)
+
+        self.assertNotIn("error", result)
+        self.assertEqual(len(result["images"]), 1)
+        out = result["images"][0]
+        self.assertEqual(out["filename"], "song_00001_.mp3")
+        self.assertEqual(out["type"], "base64")
+        self.assertEqual(base64.b64decode(out["data"]), b"ID3fake-mp3")
+        mock_data.assert_called_once_with("song_00001_.mp3", "audio", "output")
+
+
 if __name__ == "__main__":
     unittest.main()

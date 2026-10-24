@@ -89,6 +89,12 @@ MODEL_TYPE_VOLUME_DIRS = {
     "upscale_models": "/runpod-volume/models/upscale_models/",
 }
 
+# History output keys that carry downloadable files. SaveImage/SaveVideo use
+# "images"; SaveAudio, SaveAudioMP3, SaveAudioOpus and SaveAudioAdvanced use
+# "audio"; some video nodes use "videos" or "gifs". All are returned to the
+# client under the "images" key, so existing clients keep working.
+FILE_OUTPUT_KEYS = ("images", "videos", "gifs", "audio")
+
 # Placeholder some clients send when a UI model dropdown was never resolved
 # to a real filename.
 MODEL_LIST_PLACEHOLDER = "__list__"
@@ -996,11 +1002,19 @@ def handler(job):
 
         print(f"worker-comfyui - Processing {len(outputs)} output nodes...")
         for node_id, node_output in outputs.items():
-            if "images" in node_output:
+            # Audio (SaveAudio*/ACE-Step) and some video nodes report files under
+            # keys other than "images"; they all share the same {filename, subfolder,
+            # type} shape and the same /view endpoint, so return them the same way.
+            file_entries = []
+            for key in FILE_OUTPUT_KEYS:
+                entries = node_output.get(key)
+                if isinstance(entries, list):
+                    file_entries.extend(e for e in entries if isinstance(e, dict))
+            if file_entries:
                 print(
-                    f"worker-comfyui - Node {node_id} contains {len(node_output['images'])} image(s)"
+                    f"worker-comfyui - Node {node_id} contains {len(file_entries)} file(s)"
                 )
-                for image_info in node_output["images"]:
+                for image_info in file_entries:
                     filename = image_info.get("filename")
                     subfolder = image_info.get("subfolder", "")
                     img_type = image_info.get("type")
@@ -1085,7 +1099,9 @@ def handler(job):
                         errors.append(error_msg)
 
             # Check for other output types
-            other_keys = [k for k in node_output.keys() if k != "images"]
+            other_keys = [
+                k for k in node_output.keys() if k not in FILE_OUTPUT_KEYS + ("animated",)
+            ]
             if other_keys:
                 warn_msg = (
                     f"Node {node_id} produced unhandled output keys: {other_keys}."
