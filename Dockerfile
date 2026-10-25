@@ -31,6 +31,8 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender1 \
     ffmpeg \
+    sox \
+    libsox-fmt-all \
     openssh-server \
     && ln -sf /usr/bin/python3.12 /usr/bin/python \
     && ln -sf /usr/bin/pip3 /usr/bin/pip
@@ -112,8 +114,15 @@ WORKDIR /
 # Install Python runtime dependencies for the handler
 RUN uv pip install runpod requests websocket-client
 
+# Qwen3-TTS for voice jobs ({"tts": ...}, see src/tts.py). Its pins (transformers 4.57.3, accelerate
+# 1.12.0) sit inside ComfyUI's allowed range; gradio is only used by its demo, so it is skipped.
+RUN uv pip install --no-deps qwen-tts==0.1.1 \
+    && uv pip install "transformers==4.57.3" "accelerate==1.12.0" librosa soundfile sox onnxruntime einops \
+    && python -c "import qwen_tts; print('qwen-tts import ok')" \
+    && cd /comfyui && timeout 300 python main.py --quick-test-for-ci --cpu
+
 # Add application code and scripts
-ADD src/start.sh src/network_volume.py handler.py test_input.json ./
+ADD src/start.sh src/network_volume.py src/tts.py handler.py test_input.json ./
 RUN chmod +x /start.sh
 
 # Add script to install custom nodes

@@ -831,6 +831,11 @@ def handler(job):
     job_input = job["input"]
     job_id = job["id"]
 
+    # Text-to-speech jobs (Qwen3-TTS voice cloning) don't use ComfyUI at all.
+    if isinstance(job_input, dict) and isinstance(job_input.get("tts"), dict):
+        import tts
+        return tts.run(job_input["tts"])
+
     # Make sure that the input is valid
     validated_data, error_message = validate_input(job_input)
     if error_message:

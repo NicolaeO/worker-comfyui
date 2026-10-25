@@ -471,3 +471,21 @@ class TestHandlerAudioOutputs(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestHandlerTts(unittest.TestCase):
+    """{"tts": {...}} jobs go to the TTS module and never touch ComfyUI."""
+
+    @patch("handler.check_server")
+    def test_tts_job_dispatched(self, mock_check_server):
+        import tts
+        with patch.object(tts, "run", return_value={"images": [{"filename": "voice.wav"}]}) as run:
+            result = handler.handler({"id": "j1", "input": {"tts": {"text": "hi", "ref_audio": "AAAA"}}})
+        run.assert_called_once_with({"text": "hi", "ref_audio": "AAAA"})
+        mock_check_server.assert_not_called()
+        self.assertEqual(result["images"][0]["filename"], "voice.wav")
+
+    def test_tts_validates_input(self):
+        import tts
+        self.assertIn("error", tts.run({"text": ""}))
+        self.assertIn("ref_audio", tts.run({"text": "hello"})["error"])
